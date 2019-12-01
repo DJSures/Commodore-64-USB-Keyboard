@@ -9,6 +9,9 @@
 // ** to make a c64 into a pc keyboard. This is if you're wanting a     **
 // ** REAL emulated c64.                                                **
 // **                                                                   **
+// ** Commodore Key: Shortcut for F12 to bring VICE menu                **
+// ** CTRL-SHIFT-W: Shortcut for Alt-w (vice warp mode)                 **
+// **                                                                   **
 // ***********************************************************************
 
 // C64      Arduino
@@ -44,7 +47,7 @@
 #include <HID.h>
 #include <Keyboard.h>
 
-int lastKeyDown[80];
+int lastKeyState[80];
 long lastDebounceTime[80];
 int debounceDelay = 50;
 int RowPinMap[8] = {9, 3, 4, 5, 6, 7, 8, 2};
@@ -71,7 +74,7 @@ uint16_t keyMap[80] = {
   '+',           'p',        'l',              '-',      '.',             ':',           '@',        ',',             '3',         '1',
 
   // Pound       *           ;                 Home      RSHFT            =              Pi          /                Restore      Null
-  KEY_INSERT,    '*',        ';',              KEY_HOME, KEY_RIGHT_SHIFT, '=',           KEY_DELETE, '/',             KEY_PAGE_UP, NULL,
+  KEY_INSERT,    '*',        ';',              KEY_HOME, KEY_LEFT_SHIFT,  '=',           KEY_DELETE, '/',             KEY_PAGE_UP, NULL,
 
   //  1          BS          CTRL              2         SPC              C=             Q           RunStop          Joy2Up       Joy1Up
   '1',           KEY_ESC,    KEY_LEFT_CTRL,    '2',      ' ',             KEY_F12,       'q',        KEY_ESC,         '8',         '\\',
@@ -86,7 +89,7 @@ void setup() {
 #endif
 
   for (int i = 0; i < 80; i++)
-    lastKeyDown[i] = 0;
+    lastKeyState[i] = false;
 
   for (int Row = 0; Row < 8; Row++)
     pinMode(RowPinMap[Row], INPUT_PULLUP);
@@ -94,7 +97,6 @@ void setup() {
   for (int Col = 0; Col < 10; Col++)
     pinMode(ColPinMap[Col], INPUT_PULLUP);
 }
-
 
 void loop() {
 
@@ -108,78 +110,121 @@ void loop() {
 
     for (int Col = 0; Col < 10; Col++) {
 
-      int keyPos = Col + (Row * 10);
+      int  keyPos    = Col + (Row * 10);
+      int  outChar   = keyMap[keyPos];
+      bool isKeyDown = !digitalRead(ColPinMap[Col]);
 
-      if (lastDebounceTime[keyPos] + debounceDelay < millis()) {
+      if (millis() < lastDebounceTime[keyPos] + debounceDelay)
+        continue;
 
-        int outChar   = keyMap[keyPos];
-        int isKeyDown = !digitalRead(ColPinMap[Col]);
+      // left shift key
+      if (lastKeyState[17]) {
 
-        // shift key
-        if (lastKeyDown[17]) {
+        if (outChar == '2') {
 
-          if (outChar == '2') {
-            
-            outChar = '"';
-          } else if (outChar == '6') {
-            
-            outChar = '&';
-          } else if (outChar == '7') {
-            
-            outChar = '\'';
-          } else if (outChar == ';') {
-            
-            outChar = ']';
-            Keyboard.release(keyMap[17]);
-          } else if (outChar == ':') {
-            
-            outChar = '[';
-            Keyboard.release(keyMap[17]);
-          }
+          outChar = '"';
+        } else if (outChar == '6') {
+
+          outChar = '&';
+        } else if (outChar == '8') {
+
+          outChar = '(';
+        } else if (outChar == '9') {
+
+          outChar = ')';
+        } else if (outChar == KEY_RIGHT_ARROW) {
+
+          outChar = KEY_LEFT_ARROW;
+
+          if (isKeyDown)
+            Keyboard.release(keyMap[17]); // left shift
+        } else if (outChar == KEY_DOWN_ARROW) {
+
+          outChar = KEY_UP_ARROW;
+
+          if (isKeyDown)
+            Keyboard.release(keyMap[17]); // left shift
+        } else if (outChar == '7') {
+
+          outChar = '\'';
+
+          if (isKeyDown)
+            Keyboard.release(keyMap[17]); // left shift
+        } else if (outChar == ';') {
+
+          outChar = ']';
+
+          if (isKeyDown)
+            Keyboard.release(keyMap[17]); // left shift
+        } else if (outChar == ':') {
+
+          outChar = '[';
+
+          if (isKeyDown)
+            Keyboard.release(keyMap[17]); // left shift
         }
+      }
 
-        if (isKeyDown && !lastKeyDown[keyPos]) {
+      if (lastKeyState[17] && lastKeyState[72] && isKeyDown && outChar == 'w') {
 
-          lastKeyDown[keyPos] = true;
+        lastKeyState[17] = false;
+        lastKeyState[72] = false;
 
-          lastDebounceTime[keyPos] = millis();
+        Keyboard.releaseAll();
+
+        Keyboard.press(KEY_LEFT_ALT);
+        Keyboard.press('w');
+
+        Keyboard.releaseAll();
+
+        delay(500);
+
+        continue;
+      }
+
+      if (isKeyDown && !lastKeyState[keyPos]) {
+
+        lastKeyState[keyPos] = true;
+
+        lastDebounceTime[keyPos] = millis();
 
 #ifndef DEBUG
+        if (outChar != NULL)
           Keyboard.press(outChar);
 #else
-          Serial.print("col: ");
-          Serial.print(Col);
-          Serial.print(", row: ");
-          Serial.print(Row);
-          Serial.print(", Position: ");
-          Serial.print(keyPos);
-          Serial.print(", char:");
-          Serial.print(outChar);
-          Serial.println();
+        Serial.print("col: ");
+        Serial.print(Col);
+        Serial.print(", row: ");
+        Serial.print(Row);
+        Serial.print(", Position: ");
+        Serial.print(keyPos);
+        Serial.print(", char:");
+        Serial.print(outChar);
+        Serial.println();
 #endif
-        }
+      }
 
-        if (!isKeyDown && lastKeyDown[keyPos]) {
+      if (!isKeyDown && lastKeyState[keyPos]) {
 
-          lastKeyDown[keyPos] = false;
+        lastKeyState[keyPos] = false;
 
-          lastDebounceTime[keyPos] = millis();
+        lastDebounceTime[keyPos] = millis();
 
 #ifndef DEBUG
+        if (outChar != NULL)
           Keyboard.release(outChar);
 #else
-          Serial.print("Released ");
-          Serial.print(keyPos);
-          Serial.println();
+        Serial.print("Released ");
+        Serial.print(keyPos);
+        Serial.println();
 #endif
-        }
       }
     }
 
-    digitalWrite(RowPin, HIGH);  
+    digitalWrite(RowPin, HIGH);
 
-    delay(1);                    
+    delay(1);
 
-    pinMode(RowPin, INPUT_PULLUP); 
+    pinMode(RowPin, INPUT_PULLUP);
   }
 }
